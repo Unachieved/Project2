@@ -62,68 +62,84 @@ void Next_Fit() {
     free(memory);
 }
 
-void defragmentation (char * memory) {
+//TODO: need to change all the arrival times due to defragmentation
+int defragmentation (char * memory, int counter, struct Process * processes) {
     int p_start = 0;
-    int p_end = 0;
-    char * id_moved = calloc (26, sizeof(char));
-    int * id_partition_space = calloc(26, sizeof(int));
-    for(int i = 0; i < 26; i++) {
-        id_partition_space[i] = 0;
-    }
-    int moved = 0;
-    
-    for (int i = 0; i < strlen(memory); i++) {
-        if (p_start == 0 && memory[i] == '.') {
-            p_start = i;
-        } else if (p_start != 0 && memory[i] != '.') {
+    char * id = calloc (26, sizeof(char));
+    int * id_length = calloc(26, sizeof(int));
+    int num_moved = 0;
+    for (int i = 0; i < length; i++) {
+ //       printf("int i is %d\nmemory is %c\n", i, memory[i]);
+        if (memory[i] == '.' && p_start == 0) {
+            if (i == 0) {
+                p_start = -1;
+            } else {
+                p_start = i;
+            }
+        } else if(memory[i] != '.' && p_start != 0) {
             int found = 0;
-            for(int j = 0; j < moved; j++) {
-                if (id_moved[j] == memory[i]) {
+           // printf("memory[i] is %c\n", memory[i]);
+            for(int j = 0; j < num_moved; j++) {
+                if (id[j] == memory[i]) {
                     found = 1;
-                    id_partition_space[j]++;
                     break;
                 }
             }
-            if (!found) {
-                id_moved[moved] = memory[i];
-                moved++;
+            if (found == 0) {
+//                printf("moving %c\n", memory[i]);
+                id[num_moved] = memory[i];
+                num_moved++;
             }
             memory[i] = '.';
         }
     }
-/*    printf("processes moved %s\n", id_moved);
-    for (int i = 0; i < 26; i++) {
-        if (id_partition_space[i] != 0) {
-            printf("partition space is %d\n", id_partition_space[i]++);
+
+  //  printf("num moved is %d\n", num_moved);
+    for (int i = 0; i < num_moved; i++) {
+        for (int j = 0; j < 26; j++){
+            if (id[i] == processes[j].id[0]) {
+                id_length[i] = processes[j].mem_frames;
+                break;
+            }
         }
     }
- 
- */
     
-    for(int i = 0; i < moved; i++){
-        id_partition_space[i]++;
+    int placed = 0;
+    int spaces = 0;
+    int moved = 0;
+  //  print_mem(memory);
+    if(p_start == -1) {
+        p_start = 0;
     }
-    
-//    print_mem(memory);
-    int frames_moved = 0;
-    int space = 0;
-    for (int i = p_start; i < strlen(memory); i++) {
-        for (int j = 0; j < id_partition_space[frames_moved]; j++) {
-            memory[i + j] = id_moved[frames_moved];
+    for(int i = p_start; i < length; i++) {
+    //    printf("spaces is %d\n", spaces);
+        if (spaces == id_length[placed]){
+     //       printf("finished placing %c\n", id[placed]);
+       //     print_mem(memory);
+            placed++;
+       //     printf("placing :%c       new length is %d\n", id[placed], id_length[placed]);
+            spaces = 0;
         }
-        i += (id_partition_space[frames_moved] - 1);
-        frames_moved++;
-        //print_mem(memory);
-        if(frames_moved == moved) {
-  //          printf("space left is %lu\n", strlen(memory) - i);
+        if (placed == num_moved) {
             break;
         }
-        
+        memory[i] = id[placed];
+        spaces++;
+        moved++;
     }
-    free(id_moved);
+    
+    
+    printf("time %dms: Defragmentation complete (moved %d frames: ", counter + (moved * t_mem_move), moved);
+    for (int i = 0; i < num_moved - 1; i++) {
+        printf("%c, ", id[i]);
+    }
+    printf("%c)\n", id[num_moved-1]);
+    //print_mem(memory);
+    
+    return moved;
 }
 
-int ff_find_partition(char * memory, struct Process p, int counter) {
+int ff_find_partition(char * memory, struct Process p, int * counter, struct Process * processes) {
     int partition_space = 0;
     int total_space = 0;
     
@@ -131,7 +147,7 @@ int ff_find_partition(char * memory, struct Process p, int counter) {
     int p_start = 0;
     int found = 0;
    // printf("p_space is %d\n", p_space);
-    for (int i = 0; i < strlen(memory); i++) {
+    for (int i = 0; i < length; i++) {
         if (partition_space == p_space) {
             found = 1;
             break;
@@ -146,23 +162,32 @@ int ff_find_partition(char * memory, struct Process p, int counter) {
         total_space++;
     }
     
-   // printf("p_start is %d\n", p_start);
-   // printf("partition space is %d\n", partition_space);
-    //printf("p_space is %d\n", p_space);
+    // if a partition large enough for the process is found
     if (found == 1 || partition_space == p_space) {
         for (int i = p_start; i < p_start + p_space; i++){
             memory[i] = p.id[0];
         }
-        printf("time %dms: Placed process %s:\n", counter, p.id);
-    } else if (total_space >= p_space) {
-        printf("time %dms: Cannot place process %s -- starting defragmentation!\n", counter, p.id);
+        printf("time %dms: Placed process %s:\n", *counter, p.id);
         
-        defragmentation(memory);
-        printf("time %d: Defragmentation complete\n", counter);
-        ff_find_partition(memory, p, counter);
+    //if the total amount of space is large enough for the process, defragment memory
+    } else if (total_space >= p_space) {
+        printf("time %dms: Cannot place process %s -- starting defragmentation\n", *counter, p.id);
+        int moved = defragmentation(memory, *counter, processes);
+        moved = moved * t_mem_move;
+        for (int i = 0; i < 26; i++) {
+            if (processes[i].arrival[processes[i].arrival_num] != -1) {
+                processes[i].arrival[processes[i].arrival_num] += moved;
+            }
+            if(processes[i].time_complete != -1) {
+                processes[i].time_complete += moved;
+            }
+        }
+        *counter += moved;
+        ff_find_partition(memory, p, counter, processes);
         return 0;
     } else {
-        printf("time %dms: Cannot place process %s -- skipped!\n", counter, p.id);
+        //
+        printf("time %dms: Cannot place process %s -- skipped!\n", *counter, p.id);
         return -1;
     }
     
@@ -172,7 +197,7 @@ int ff_find_partition(char * memory, struct Process p, int counter) {
 
 void remove_partition(char * memory, struct Process p, int counter) {
     int complete = -1;
-    for(int i = 0; i < strlen(memory); i++) {
+    for(int i = 0; i < length; i++) {
         if (memory[i] == p.id[0]) {
             memory[i] = '.';
             if (memory[i+1] != p.id[0]) {
@@ -196,37 +221,43 @@ void First_Fit(struct Process * p) {
     int counter = 0;
     int finished = 0;
     printf("time %dms: Simulator started (Contiguous -- First-Fit)\n", counter);
-    
-    for (int i = 0; i < 26; i++) {
-        if (p[i].arrival[p[i].arrival_num] == -1) {
-            finished++;
+   // int stop_time = -1;
+    int placed = 0;
+    while(1) { //later change to when finished != process numbers
+        finished = 0;
+        for (int i = 0; i < 26; i++) {
+            if (p[i].time_complete == counter) {
+                remove_partition(memory, p[i], counter);
+                p[i].time_complete = -1;
+                placed--;
+            }
         }
-    }
-
-    while(counter < 5000) { //later change to when finished != process numbers
+        
         for (int i = 0; i < 26; i++) {
             if(p[i].arrival[p[i].arrival_num] == counter){
                 printf("time %dms: Process %s arrived (requires %d frames)\n", counter, p[i].id, p[i].mem_frames);
-                int found = ff_find_partition(memory, p[i], counter);
+                int found = ff_find_partition(memory, p[i], &counter, p);
                 if (found == -1) {
                     p[i].time_complete = -1;
                    // printf("time %dms: could not fit process %s\n", counter, p[i].id);
                 } else {
                     p[i].time_complete = counter + p[i].length[p[i].arrival_num];
-                    printf("Process %s will complete at time %d\n", p[i].id, p[i].time_complete);
+                    placed++;
                 }
                 p[i].arrival_num++;
             }
+            if(p[i].arrival[p[i].arrival_num] == -1) {
+                finished++;
+            }
         }
         
-        for (int i = 0; i < 26; i++) {
-            if (p[i].time_complete == counter) {
-                remove_partition(memory, p[i], counter);
-            }
+        if (finished == 26 && placed == 0) {
+            break;
         }
         counter++;
     }
     
+    printf("time %dms: Simulator ended (Contiguous -- First-Fit)\n", counter);
     free(memory);
 }
 
@@ -345,3 +376,4 @@ int main(int argc, char ** argv) {
     
     
 }
+
