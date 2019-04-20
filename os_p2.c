@@ -62,7 +62,6 @@ void Next_Fit() {
     free(memory);
 }
 
-//TODO: need to change all the arrival times due to defragmentation
 int defragmentation (char * memory, int counter, struct Process * processes) {
     int p_start = 0;
     char * id = calloc (26, sizeof(char));
