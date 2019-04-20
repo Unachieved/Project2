@@ -10,10 +10,11 @@ int column = 0;
 int t_mem_move = 0;
 
 struct Process {
-    char * id;
+    char* id;
+    char* mem_loc; // points to process' first frame in memory
     int mem_frames;
-    int * arrival;
-    int * length;
+    int* arrival;
+    int* length;
     int arrival_num;
     int time_complete;
 };
@@ -50,13 +51,106 @@ void Best_Fit() {
     free(memory);
 }
 
-void Next_Fit() {
+int findNextFitPartition(char* memory, struct Process* p, char* lastProc) {
+    int n_frames = p->mem_frames;
+    int i_lastProc = lastProc - memory;
+    int i = 0, i_currPartition = i_lastProc, currPartitionSize = 0;
+    int found = 0;
+    // try i < length + lastProcesses's frame cause last process could have left before next
+    // process arrived.. so memory is free before and after where lastProc is pointed to
+    while (i < length) {
+        if (i_lastProc+i == length) {
+            // reached end of memory, have to loop back to start with a new partition
+            currPartitionSize = 0;
+            i_currPartition = 0;
+        }
+        
+        if (memory[(i_lastProc+i)%length] == '.') {
+            currPartitionSize++;
+            if (currPartitionSize == n_frames) {
+                found = 1;
+                break;
+            }
+        } else {
+            // this frame is allocated for another process
+            currPartitionSize = 0;
+            i_currPartition = i_lastProc+i+1;
+        }
+        
+        i++;
+    }
+    
+    if (found == 1) {
+        char pid = (p->id)[0];
+        for (i = 0; i < n_frames; i++) {
+            memory[i_currPartition+i] = pid;
+        }
+    }
+    
+    return found;
+}
+
+void Next_Fit(struct Process* ps) {
     char * memory = calloc(length, sizeof(char));
     for (int i = 0; i < length; i++) {
         memory[i] = '.';
     }
-    int counter = 0;
+    int time = 0, n_freeMemory = length;
     printf("time %dms: Simulator started (Contiguous -- Next-Fit)\n", counter);
+    char* lastProc = memory;
+    int i, n_pArrival, added;
+    while (time < 5000) {
+        // check for finished processes
+        for (i = 0; i < 26; i++) {
+            n_pArrival = ps[i].arrival_num;
+            if (ps[i].arrival[n_pArrival] == -1) continue;
+            if (ps[i].arrival[n_pArrival] + ps[i].length[n_pArrival] == time) {
+                // ps[i] process finished
+                ps[i].arrival_num++;
+                n_pArrival++;
+                // check if process will not arrive again in the future (completely done)
+                if (ps[i].arrival[n_pArrival] == -1) {
+                    ps[i].time_complete = time;
+                }
+                remove_partition(memory, ps[i], time);
+            }
+        }
+        
+        // check for arriving processes
+        for (i = 0; i < 26; i++) {
+            n_pArrival = ps[i].arrival_num;
+            if (ps[i].arrival[n_pArrival] == -1) continue;
+            if (ps[i].arrival[n_pArrival] == time) {
+                // ps[i] process arrives
+                added = findNextFitPartition(memory, &ps[i], lastProc);
+                if (added == 1) {
+                    n_freeMemory -= ps[i].mem_frames;
+                } else {
+                    // process could not be added because no available partition
+                    if (ps[i].mem_frames <= n_freeMemory) {
+                        // process can be added once memory is defragmented
+                        defragmentation(memory);
+                        // memory+(length-n_freeMemory) should point to address in memory where
+                        //  the first free memory is
+                        findNextFitPartition( memory, &ps[i], memory+(length-n_freeMemory) );
+                    } else {
+                        // process can not be added even if memory were to be defragmented
+                        // skip it?? according to PDF
+                        ps[i].arrival_num++;
+                        n_pArrival = ps[i].arrival_num;
+                        if (ps[i].arrival[n_pArrival] == -1) {
+                            // the skipped arrival was the process' last arrival, so it's completed
+                            ps[i].time_complete = time;
+                        }
+                    }
+                }
+            }
+        }
+        
+        
+        
+        time++;
+    }
     
     
     free(memory);
@@ -171,15 +265,12 @@ int ff_find_partition(char * memory, struct Process p, int counter) {
 }
 
 void remove_partition(char * memory, struct Process p, int counter) {
-    int complete = -1;
     for(int i = 0; i < strlen(memory); i++) {
         if (memory[i] == p.id[0]) {
             memory[i] = '.';
-            if (memory[i+1] != p.id[0]) {
-                complete = 0;
+            if (i != strlen(memory)-1 && memory[i+1] != p.id[0]) {
+                break;
             }
-        } else if (complete == 0) {
-            break;
         }
     }
     
@@ -299,20 +390,18 @@ struct Process {
 };
 */
 int main(int argc, char ** argv) {
-    
     length = atoi(argv[2]);
     column = atoi(argv[1]);
     char * filename = argv[3];
     t_mem_move = atoi(argv[4]);
     
-    
     FILE *file = fopen (filename, "r");
     
     struct Process * proc = calloc(26, sizeof(struct Process));
     for (int i = 0; i < 26; i++) {
-        proc[i].id = calloc(4, sizeof(char));
-        proc[i].arrival = calloc(40, sizeof(int));
-        proc[i].length = calloc(40, sizeof(int));
+        proc[i].id = (char*) calloc(4, sizeof(char));
+        proc[i].arrival = (int*) calloc(40, sizeof(int));
+        proc[i].length = (int*) calloc(40, sizeof(int));
         for (int s = 0; s < 40; s++) {
             proc[i].arrival[s] = -1;
             proc[i].length[s] = -1;
