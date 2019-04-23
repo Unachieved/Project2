@@ -24,7 +24,7 @@ struct Process {
 int isAllComplete(struct Process* p) {
     int i;
     for (i = 0; i < n_processes; i++) {
-        if (p[i].time_complete == -1) {
+        if (p[i].i_arrival != p[i].n_arrival) {
             return 0;
         }
     }
@@ -155,7 +155,7 @@ void Best_Fit() {
     free(memory);
 }
 
-int findNextFitPartition(char* memory, struct Process* p, char* lastProc) {
+int findNextFitPartition(char* memory, struct Process* p, char* lastProc, int time) {
     int n_frames = p->mem_frames;
     int i_lastProc = lastProc - memory;
     int i = 0, i_currPartition = i_lastProc, currPartitionSize = 0;
@@ -191,6 +191,9 @@ int findNextFitPartition(char* memory, struct Process* p, char* lastProc) {
         for (i = 0; i < n_frames; i++) {
             memory[i_currPartition+i] = pid;
         }
+        // placed the process in memory
+        printf("time %dms: Placed process %s:\n", time, p->id);
+        print_mem(memory);
     }
     
     return found;
@@ -231,7 +234,8 @@ void Next_Fit(struct Process* ps) {
             if (ps[i].arrival[i_pArrival] == -1) continue; // process does not exist or is completed
             if (ps[i].arrival[i_pArrival] == time) {
                 // ps[i] process arrives
-                added = findNextFitPartition(memory, &ps[i], lastProc);
+                printf("time %dms: Process %s arrived (requires %d frames)\n", time, ps[i].id, ps[i].mem_frames);
+                added = findNextFitPartition(memory, &ps[i], lastProc, time);
                 if (added == 1) {
                     n_freeMemory -= ps[i].mem_frames;
                     // update lastProc
@@ -248,7 +252,7 @@ void Next_Fit(struct Process* ps) {
                         defragmentation(memory, time, ps);
                         // memory+(length-n_freeMemory) should point to address in memory where
                         //  the first free memory is
-                        findNextFitPartition( memory, &ps[i], memory+(length-n_freeMemory) );
+                        findNextFitPartition( memory, &ps[i], memory+(length-n_freeMemory), time );
                     } else {
                         // process can not be added even if memory were to be defragmented
                         // skip it?? according to PDF
@@ -342,6 +346,7 @@ void First_Fit(struct Process * p) {
         for (i = 0; i < n_processes; i++) {
             if (p[i].time_complete == counter) {
                 remove_partition(memory, p[i], counter);
+                p[i].i_arrival++;
                 p[i].time_complete = -1;
                 placed--;
             }
@@ -358,20 +363,19 @@ void First_Fit(struct Process * p) {
                     p[i].time_complete = counter + p[i].length[p[i].i_arrival];
                     placed++;
                 }
-                p[i].i_arrival += 1;
             }
             if(p[i].i_arrival == p[i].n_arrival) {
                 finished++;
             }
         }
-        //printf("GOT HERE\n");
+        
         if (finished == n_processes && placed == 0) {
             break;
         }
         counter++;
     }
     
-    printf("time %dms: Simulator ended (Contiguous -- First-Fit)\n", counter);
+    printf("time %dms: Simulator ended (Contiguous -- First-Fit)\n\n", counter);
     free(memory);
 }
 
@@ -385,6 +389,8 @@ void parse(char * line, struct Process* p) {
         }
         (p->id)[i] = line[i];
     }
+    (p->id)[i] = '\0';
+    
     char* buffer = calloc (1024, sizeof(char));
     // get frames count of process
     i++; // skip over ' '
@@ -394,21 +400,23 @@ void parse(char * line, struct Process* p) {
             break;
         }
         buffer[j] = line[i];
+        j++;
     }
     
-    int frames = atoi(buffer);
-    p->mem_frames = frames;
+    p->mem_frames = atoi(buffer); // assign process' # of frames
     int n_arrivals = 0;
     int* arrBuffer = (int*) calloc(10, sizeof(int));
     int* lenBuffer = (int*) calloc(10, sizeof(int));
     
-    buffer = realloc(buffer, 1024 * sizeof(char));
+    free(buffer);
+    buffer = calloc(1024, sizeof(char));
     i++; // skip over ' '
     j = 0;
     for (; i < strlen(line); i++) {
         if (isspace(line[i])) {
             lenBuffer[n_arrivals] = atoi(buffer);
-            buffer = realloc(buffer, 1024 * sizeof(char));
+            free(buffer);
+            buffer = calloc(1024, sizeof(char));
             j = 0;
             n_arrivals++;
             continue;
@@ -420,7 +428,8 @@ void parse(char * line, struct Process* p) {
             break;
         } else if (line[i] == '/') {
             arrBuffer[n_arrivals] = atoi(buffer);
-            buffer = realloc(buffer, 1024 * sizeof(char));
+            free(buffer);
+            buffer = calloc(1024, sizeof(char));
             j = 0;
             continue;
         }
