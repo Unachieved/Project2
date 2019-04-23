@@ -40,6 +40,99 @@ void print_mem(char * memory) {
     printf("\n");
 }
 
+void remove_partition(char * memory, struct Process p, int counter) {
+    int complete = -1;
+    for(int i = 0; i < length; i++) {
+        if (memory[i] == p.id[0]) {
+            memory[i] = '.';
+            if (i != strlen(memory)-1 && memory[i+1] != p.id[0]) {
+                break;
+            }
+        }
+    }
+    
+    printf("time %dms: Process %s removed:\n", counter, p.id);
+    print_mem(memory);
+}
+
+
+int defragmentation (char* memory, int counter, struct Process* processes) {
+    int p_start = 0;
+    char * id = calloc (26, sizeof(char));
+    int * id_length = calloc(26, sizeof(int));
+    int num_moved = 0;
+    for (int i = 0; i < length; i++) {
+        //       printf("int i is %d\nmemory is %c\n", i, memory[i]);
+        if (memory[i] == '.' && p_start == 0) {
+            if (i == 0) {
+                p_start = -1;
+            } else {
+                p_start = i;
+            }
+        } else if(memory[i] != '.' && p_start != 0) {
+            int found = 0;
+            // printf("memory[i] is %c\n", memory[i]);
+            for(int j = 0; j < num_moved; j++) {
+                if (id[j] == memory[i]) {
+                    found = 1;
+                    break;
+                }
+            }
+            if (found == 0) {
+                //                printf("moving %c\n", memory[i]);
+                id[num_moved] = memory[i];
+                num_moved++;
+            }
+            memory[i] = '.';
+        }
+    }
+    
+    //  printf("num moved is %d\n", num_moved);
+    for (int i = 0; i < num_moved; i++) {
+        for (int j = 0; j < 26; j++){
+            if (id[i] == processes[j].id[0]) {
+                id_length[i] = processes[j].mem_frames;
+                break;
+            }
+        }
+    }
+    
+    int placed = 0;
+    int spaces = 0;
+    int moved = 0;
+    //  print_mem(memory);
+    if(p_start == -1) {
+        p_start = 0;
+    }
+    for(int i = p_start; i < length; i++) {
+        //    printf("spaces is %d\n", spaces);
+        if (spaces == id_length[placed]){
+            //       printf("finished placing %c\n", id[placed]);
+            //     print_mem(memory);
+            placed++;
+            //     printf("placing :%c       new length is %d\n", id[placed], id_length[placed]);
+            spaces = 0;
+        }
+        if (placed == num_moved) {
+            break;
+        }
+        memory[i] = id[placed];
+        spaces++;
+        moved++;
+    }
+    
+    
+    printf("time %dms: Defragmentation complete (moved %d frames: ", counter + (moved * t_mem_move), moved);
+    for (int i = 0; i < num_moved - 1; i++) {
+        printf("%c, ", id[i]);
+    }
+    printf("%c)\n", id[num_moved-1]);
+    //print_mem(memory);
+    
+    return moved;
+}
+
+
 void Best_Fit() {
     char * memory = calloc(length, sizeof(char));
     for (int i = 0; i < length; i++) {
@@ -81,6 +174,8 @@ int findNextFitPartition(char* memory, struct Process* p, char* lastProc) {
     }
     
     if (found == 1) {
+        // update process' mem_loc
+        p->mem_loc = memory + i_currPartition;
         char pid = (p->id)[0];
         for (i = 0; i < n_frames; i++) {
             memory[i_currPartition+i] = pid;
@@ -97,34 +192,43 @@ void Next_Fit(struct Process* ps) {
     }
     int time = 0, n_freeMemory = length;
     printf("time %dms: Simulator started (Contiguous -- Next-Fit)\n", counter);
+    // points to the memory location right after the last added process's frames
     char* lastProc = memory;
-    int i, n_pArrival, added;
+    int i, i_pArrival, added;
     while (time < 5000) {
         // check for finished processes
         for (i = 0; i < 26; i++) {
-            n_pArrival = ps[i].arrival_num;
-            if (ps[i].arrival[n_pArrival] == -1) continue;
-            if (ps[i].arrival[n_pArrival] + ps[i].length[n_pArrival] == time) {
+            i_pArrival = ps[i].arrival_num;
+            if (ps[i].arrival[i_pArrival] == -1) continue; // process does not exist or is completed
+            if (ps[i].arrival[i_pArrival] + ps[i].length[i_pArrival] == time) {
                 // ps[i] process finished
-                ps[i].arrival_num++;
-                n_pArrival++;
+                ps[i].arrival_num += 1;
+                i_pArrival++;
                 // check if process will not arrive again in the future (completely done)
-                if (ps[i].arrival[n_pArrival] == -1) {
+                if (ps[i].arrival[i_pArrival] == -1) {
                     ps[i].time_complete = time;
                 }
                 remove_partition(memory, ps[i], time);
+                ps[i].mem_loc = NULL;
+                n_freeMemory += ps[i].mem_frames;
             }
         }
         
         // check for arriving processes
         for (i = 0; i < 26; i++) {
-            n_pArrival = ps[i].arrival_num;
-            if (ps[i].arrival[n_pArrival] == -1) continue;
-            if (ps[i].arrival[n_pArrival] == time) {
+            i_pArrival = ps[i].arrival_num;
+            if (ps[i].arrival[i_pArrival] == -1) continue; // process does not exist or is completed
+            if (ps[i].arrival[i_pArrival] == time) {
                 // ps[i] process arrives
                 added = findNextFitPartition(memory, &ps[i], lastProc);
                 if (added == 1) {
                     n_freeMemory -= ps[i].mem_frames;
+                    // update lastProc
+                    lastProc = ps[i].mem_loc + ps[i].mem_frames;
+                    if (lastProc == memory + length) {
+                        // if last process added was added at the end of memory and filled up to the end
+                        lastProc = memory;
+                    }
                 } else {
                     // process could not be added because no available partition
                     if (ps[i].mem_frames <= n_freeMemory) {
@@ -137,8 +241,8 @@ void Next_Fit(struct Process* ps) {
                         // process can not be added even if memory were to be defragmented
                         // skip it?? according to PDF
                         ps[i].arrival_num++;
-                        n_pArrival = ps[i].arrival_num;
-                        if (ps[i].arrival[n_pArrival] == -1) {
+                        i_pArrival = ps[i].arrival_num;
+                        if (ps[i].arrival[i_pArrival] == -1) {
                             // the skipped arrival was the process' last arrival, so it's completed
                             ps[i].time_complete = time;
                         }
@@ -156,81 +260,6 @@ void Next_Fit(struct Process* ps) {
     free(memory);
 }
 
-int defragmentation (char * memory, int counter, struct Process * processes) {
-    int p_start = 0;
-    char * id = calloc (26, sizeof(char));
-    int * id_length = calloc(26, sizeof(int));
-    int num_moved = 0;
-    for (int i = 0; i < length; i++) {
- //       printf("int i is %d\nmemory is %c\n", i, memory[i]);
-        if (memory[i] == '.' && p_start == 0) {
-            if (i == 0) {
-                p_start = -1;
-            } else {
-                p_start = i;
-            }
-        } else if(memory[i] != '.' && p_start != 0) {
-            int found = 0;
-           // printf("memory[i] is %c\n", memory[i]);
-            for(int j = 0; j < num_moved; j++) {
-                if (id[j] == memory[i]) {
-                    found = 1;
-                    break;
-                }
-            }
-            if (found == 0) {
-//                printf("moving %c\n", memory[i]);
-                id[num_moved] = memory[i];
-                num_moved++;
-            }
-            memory[i] = '.';
-        }
-    }
-
-  //  printf("num moved is %d\n", num_moved);
-    for (int i = 0; i < num_moved; i++) {
-        for (int j = 0; j < 26; j++){
-            if (id[i] == processes[j].id[0]) {
-                id_length[i] = processes[j].mem_frames;
-                break;
-            }
-        }
-    }
-    
-    int placed = 0;
-    int spaces = 0;
-    int moved = 0;
-  //  print_mem(memory);
-    if(p_start == -1) {
-        p_start = 0;
-    }
-    for(int i = p_start; i < length; i++) {
-    //    printf("spaces is %d\n", spaces);
-        if (spaces == id_length[placed]){
-     //       printf("finished placing %c\n", id[placed]);
-       //     print_mem(memory);
-            placed++;
-       //     printf("placing :%c       new length is %d\n", id[placed], id_length[placed]);
-            spaces = 0;
-        }
-        if (placed == num_moved) {
-            break;
-        }
-        memory[i] = id[placed];
-        spaces++;
-        moved++;
-    }
-    
-    
-    printf("time %dms: Defragmentation complete (moved %d frames: ", counter + (moved * t_mem_move), moved);
-    for (int i = 0; i < num_moved - 1; i++) {
-        printf("%c, ", id[i]);
-    }
-    printf("%c)\n", id[num_moved-1]);
-    //print_mem(memory);
-    
-    return moved;
-}
 
 int ff_find_partition(char * memory, struct Process p, int * counter, struct Process * processes) {
     int partition_space = 0;
@@ -286,21 +315,6 @@ int ff_find_partition(char * memory, struct Process p, int * counter, struct Pro
     
     print_mem(memory);
     return 0;
-}
-
-void remove_partition(char * memory, struct Process p, int counter) {
-    int complete = -1;
-    for(int i = 0; i < length; i++) {
-        if (memory[i] == p.id[0]) {
-            memory[i] = '.';
-            if (i != strlen(memory)-1 && memory[i+1] != p.id[0]) {
-                break;
-            }
-        }
-    }
-    
-    printf("time %dms: Process %s removed:\n", counter, p.id);
-    print_mem(memory);
 }
 
 void First_Fit(struct Process * p) {
