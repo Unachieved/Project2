@@ -17,7 +17,7 @@ struct Process {
     int* length;
     int i_arrival;
     int n_arrival;
-    int time_complete;
+    int time_complete; // time when the current interval should finish
 };
 
 // return 1 if all processes are complete (all processes' time_complete != -1)
@@ -52,17 +52,19 @@ void print_mem(char * memory) {
     printf("\n");
 }
 
-void remove_partition(char * memory, struct Process p, int counter) {
-    for(int i = 0; i < length; i++) {
-        if (memory[i] == p.id[0]) {
-            memory[i] = '.';
-            if (i != strlen(memory)-1 && memory[i+1] != p.id[0]) {
-                break;
-            }
-        }
+void remove_partition(char * memory, struct Process* p, int counter) {
+    // checks if p is in memory
+    if (p->mem_loc == NULL) {
+        return;
     }
     
-    printf("time %dms: Process %s removed:\n", counter, p.id);
+    char* pStart = p->mem_loc;
+    for(int i = 0; i < p->mem_frames; i++) {
+        *(pStart + i) = '.';
+    }
+    p->mem_loc = NULL;
+    
+    printf("time %dms: Process %s removed:\n", counter, p->id);
     print_mem(memory);
 }
 
@@ -213,17 +215,12 @@ void Next_Fit(struct Process* ps) {
         // check for finished processes (remove from memory)
         for (i = 0; i < n_processes; i++) {
             i_pArrival = ps[i].i_arrival;
-            if (ps[i].arrival[i_pArrival] == -1) continue; // process does not exist or is completed
-            if (ps[i].arrival[i_pArrival] + ps[i].length[i_pArrival] == time) {
+            if (i_pArrival == ps[i].n_arrival) continue; // process is complete
+            if (ps[i].time_complete == time) {
                 // ps[i] process finished
                 ps[i].i_arrival += 1;
                 i_pArrival++;
-                // check if process will not arrive again in the future (completely done)
-                if (i_pArrival == ps[i].n_arrival) {
-                    ps[i].time_complete = time;
-                }
-                remove_partition(memory, ps[i], time);
-                ps[i].mem_loc = NULL;
+                remove_partition(memory, &ps[i], time);
                 n_freeMemory += ps[i].mem_frames;
             }
         }
@@ -231,7 +228,7 @@ void Next_Fit(struct Process* ps) {
         // check for arriving processes
         for (i = 0; i < n_processes; i++) {
             i_pArrival = ps[i].i_arrival;
-            if (ps[i].arrival[i_pArrival] == -1) continue; // process does not exist or is completed
+            if (i_pArrival == ps[i].n_arrival) continue; // process does not exist or is completed
             if (ps[i].arrival[i_pArrival] == time) {
                 // ps[i] process arrives
                 printf("time %dms: Process %s arrived (requires %d frames)\n", time, ps[i].id, ps[i].mem_frames);
@@ -245,6 +242,7 @@ void Next_Fit(struct Process* ps) {
                         //  so set next free space after last process as the beginnning of memory
                         lastProc = memory;
                     }
+                    ps[i].time_complete = time + ps[i].length[i_pArrival];
                 } else {
                     // process could not be added because no available partition
                     if (ps[i].mem_frames <= n_freeMemory) {
@@ -253,15 +251,11 @@ void Next_Fit(struct Process* ps) {
                         // memory+(length-n_freeMemory) should point to address in memory where
                         //  the first free memory is
                         findNextFitPartition( memory, &ps[i], memory+(length-n_freeMemory), time );
+                        ps[i].time_complete = time + ps[i].length[i_pArrival];
                     } else {
-                        // process can not be added even if memory were to be defragmented
-                        // skip it?? according to PDF
+                        // process can not be added even if memory were to be defragmented so skip it
                         ps[i].i_arrival += 1;
-                        i_pArrival = ps[i].i_arrival;
-                        if (i_pArrival == ps[i].n_arrival) {
-                            // the skipped arrival was the process' last arrival, so it's completed
-                            ps[i].time_complete = time;
-                        }
+                        i_pArrival++;
                     }
                 }
             }
@@ -303,6 +297,7 @@ int ff_find_partition(char * memory, struct Process p, int * counter, struct Pro
         for (int i = p_start; i < p_start + p_space; i++){
             memory[i] = p.id[0];
         }
+        p.mem_loc = memory + p_start;
         printf("time %dms: Placed process %s:\n", *counter, p.id);
         
     //if the total amount of space is large enough for the process, defragment memory
@@ -345,7 +340,7 @@ void First_Fit(struct Process * p) {
         finished = 0;
         for (i = 0; i < n_processes; i++) {
             if (p[i].time_complete == counter) {
-                remove_partition(memory, p[i], counter);
+                remove_partition(memory, &p[i], counter);
                 p[i].i_arrival++;
                 p[i].time_complete = -1;
                 placed--;
