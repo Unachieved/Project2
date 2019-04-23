@@ -206,7 +206,7 @@ void Next_Fit(struct Process* ps) {
     // points to the memory location right after the last added process's frames
     char* lastProc = memory;
     int i, i_pArrival, added;
-    while (isAllComplete(ps) == 0) {
+    while ( isAllComplete(ps) == 0 ) {
         // check for finished processes (remove from memory)
         for (i = 0; i < n_processes; i++) {
             i_pArrival = ps[i].i_arrival;
@@ -263,12 +263,10 @@ void Next_Fit(struct Process* ps) {
             }
         }
         
-        
-        
         time++;
     }
     
-    
+    printf("time %dms: Simulator ended (Contiguous -- Next-Fit)\n", time);
     free(memory);
 }
 
@@ -444,6 +442,14 @@ void parse(char * line, struct Process* p) {
     lenBuffer = NULL;
 }
 
+void resetProcessesStats(struct Process* ps) {
+    int i;
+    for (i = 0; i < n_processes; i++) {
+        ps[i].mem_loc = NULL;
+        ps[i].i_arrival = 0;
+        ps[i].time_complete = -1;
+    }
+}
 
 int main(int argc, char ** argv) {
     length = atoi(argv[2]);
@@ -495,7 +501,9 @@ int main(int argc, char ** argv) {
     procTemp = NULL;
     
     First_Fit(proc);
+    resetProcessesStats(proc);
     Next_Fit(proc);
+    resetProcessesStats(proc);
     
     
 }
