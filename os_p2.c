@@ -217,7 +217,7 @@ void Next_Fit(struct Process* ps) {
         // check for arriving processes
         for (i = 0; i < n_processes; i++) {
             i_pArrival = ps[i].i_arrival;
-            if (i_pArrival == ps[i].n_arrival) continue; // process does not exist or is completed
+            if (i_pArrival == ps[i].n_arrival) continue; // process is complete
             if (ps[i].arrival[i_pArrival] == time) {
                 // ps[i] process arrives
                 printf("time %dms: Process %c arrived (requires %d frames)\n", time, ps[i].id, ps[i].mem_frames);
@@ -233,7 +233,7 @@ void Next_Fit(struct Process* ps) {
                     }
                     ps[i].time_complete = time + ps[i].length[i_pArrival];
                 } else {
-                    // process could not be added because no available partition
+                    // process could not be added because no available contiguous partition
                     if (ps[i].mem_frames <= n_freeMemory) {
                         // process can be added once memory is defragmented
                         printf("time %dms: Cannot place process %c -- starting defragmentation\n", time, ps[i].id);
@@ -242,12 +242,12 @@ void Next_Fit(struct Process* ps) {
                         // memory+(length-n_freeMemory) should point to address in memory where
                         //  the first free memory is
                         findNextFitPartition( memory, &ps[i], memory+(length-n_freeMemory), time );
+                        n_freeMemory -= ps[i].mem_frames;
                         ps[i].time_complete = time + ps[i].length[i_pArrival];
                     } else {
                         // process can not be added even if memory were to be defragmented so skip it
                         printf("time %dms: Cannot place process %c -- skipped!\n", time, ps[i].id);
                         ps[i].i_arrival += 1;
-                        i_pArrival++;
                     }
                 }
             }
@@ -423,7 +423,7 @@ void nonContiguous(struct Process* ps) {
     int time = 0, n_freeMemory = length;
     printf("time %dms: Simulator started (Non-Contiguous)\n", time);
     
-    int i, i_pArrival, added;
+    int i, i_pArrival;
     while ( isAllComplete(ps) == 0 ) {
         // check for finished processes (remove from memory)
         for (i = 0; i < n_processes; i++) {
