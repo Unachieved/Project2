@@ -29,11 +29,10 @@ struct pageTable {
 };
 
 // return 1 if all processes are complete (i_arrival == n_arrival means complete)
-int isAllComplete(struct Process* p, int time) {
+int isAllComplete(struct Process* p) {
     int i;
     for (i = 0; i < n_processes; i++) {
         if (p[i].i_arrival != p[i].n_arrival) {
-            if (time == 3209) printf("%c\t%d\t%d\n", p[i].id, p[i].i_arrival, p[i].n_arrival);
             return 0;
         }
     }
@@ -202,7 +201,7 @@ void Next_Fit(struct Process* ps) {
     // points to the memory location right after the last added process's frames
     char* lastProc = memory;
     int i, i_pArrival, added, defragTime;
-    while ( isAllComplete(ps, time) == 0 ) {
+    while ( isAllComplete(ps) == 0 ) {
         // check for finished processes (remove from memory)
         for (i = 0; i < n_processes; i++) {
             i_pArrival = ps[i].i_arrival;
@@ -316,7 +315,7 @@ void First_Fit(struct Process * p) {
     int counter = 0;
     printf("time %dms: Simulator started (Contiguous -- First-Fit)\n", counter);
     int i;
-    while( isAllComplete(p, counter) == 0 ) {
+    while( isAllComplete(p) == 0 ) {
         // remove completed processes from memory
         for (i = 0; i < n_processes; i++) {
             if (p[i].time_complete == counter) {
@@ -425,7 +424,7 @@ void nonContiguous(struct Process* ps) {
     printf("time %dms: Simulator started (Non-Contiguous)\n", time);
     
     int i, i_pArrival, added;
-    while ( isAllComplete(ps, time) == 0 ) {
+    while ( isAllComplete(ps) == 0 ) {
         // check for finished processes (remove from memory)
         for (i = 0; i < n_processes; i++) {
             i_pArrival = ps[i].i_arrival;
