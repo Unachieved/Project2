@@ -243,6 +243,13 @@ void Next_Fit(struct Process* ps) {
                         //  the first free memory is
                         findNextFitPartition( memory, &ps[i], memory+(length-n_freeMemory), time );
                         n_freeMemory -= ps[i].mem_frames;
+                        // update lastProc
+                        lastProc = ps[i].mem_loc + ps[i].mem_frames;
+                        if (lastProc == memory + length) {
+                            // if last process added was added at the end of memory and filled up to the end
+                            //  so set next free space after last process as the beginnning of memory
+                            lastProc = memory;
+                        }
                         ps[i].time_complete = time + ps[i].length[i_pArrival];
                     } else {
                         // process can not be added even if memory were to be defragmented so skip it
