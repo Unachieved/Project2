@@ -19,9 +19,16 @@ struct Process {
     int i_arrival;
     int n_arrival;
     int time_complete; // time when the current interval should finish
+    struct pageTable* pages; // for non-contiguous memory
+    int n_pages;
 };
 
-// return 1 if all processes are complete (all processes' time_complete != -1)
+struct pageTable {
+    char* startFrame;
+    int length;
+};
+
+// return 1 if all processes are complete (all processes' i_arrival == n_arrival)
 int isAllComplete(struct Process* p) {
     int i;
     for (i = 0; i < n_processes; i++) {
@@ -185,7 +192,6 @@ void Next_Fit(struct Process* ps) {
             if (ps[i].time_complete == time) {
                 // ps[i] process finished
                 ps[i].i_arrival += 1;
-                i_pArrival++;
                 remove_partition(memory, &ps[i], time);
                 n_freeMemory += ps[i].mem_frames;
             }
@@ -323,6 +329,122 @@ void First_Fit(struct Process * p) {
     free(memory);
 }
 
+
+void nonC_addFirstPartition(char* memory, struct Process* p, int time) {
+    int n_frames = p->mem_frames;
+    char* partitionStart = NULL;
+    int i = 0, partitionSize;
+    struct pageTable* newPageTable = NULL;
+    while (n_frames != 0) {
+        if (memory[i] == '.') {
+            // found a free memory frame.. determine size of whole partition
+            partitionStart = memory + i;
+            partitionSize = 0;
+            while (partitionSize < n_frames && i < length && memory[i] == '.') {
+                // simultaneously look for new frames and add process to memory for efficiency 8)
+                memory[i] = p->id;
+                partitionSize++;
+                i++;
+            }
+            
+            if (p->pages == NULL /* && p->n_pages == 0 */) {
+                // first page to be added
+                p->n_pages = 1;
+                p->pages = (struct pageTable*) calloc(1, sizeof(struct pageTable));
+                (p->pages)[0].startFrame = partitionStart;
+                (p->pages)[0].length = partitionSize;
+            } else {
+                newPageTable = (struct pageTable*) calloc(p->n_pages + 1, sizeof(struct pageTable));
+                memcpy(newPageTable, p->pages, sizeof(struct pageTable) * (p->n_pages));
+                newPageTable[p->n_pages].startFrame = partitionStart;
+                newPageTable[p->n_pages].length = partitionSize;
+                free( p->pages );
+                p->pages = newPageTable;
+                newPageTable = NULL;
+                (p->n_pages)++;
+            }
+            partitionStart = NULL;
+            n_frames -= partitionSize;
+        } else {
+            i++;
+        }
+    }
+    printf("time %dms: Placed process %c:\n", time, p->id);
+    print_mem(memory);
+}
+
+void nonC_removePartition(char* memory, struct Process* p, int time) {
+    // checks if p is in memory
+    if (p->pages == NULL) {
+        return;
+    }
+    
+    struct pageTable* pageTable = NULL;
+    char* pageStart = NULL;
+    int i_page, i_memory;
+    for (i_page = 0; i_page < p->n_pages; i_page++) {
+        pageTable = &(p->pages[i_page]);
+        pageStart = pageTable->startFrame;
+        for (i_memory = 0; i_memory < pageTable->length; i_memory++) {
+            *(pageStart + i_memory) = '.';
+        }
+        pageTable->startFrame = NULL;
+    }
+    free( p->pages );
+    p->pages = NULL;
+    p->n_pages = 0;
+    
+    printf("time %dms: Process %c removed:\n", time, p->id);
+    print_mem(memory);
+}
+
+void nonContiguous(struct Process* ps) {
+    char * memory = calloc(length, sizeof(char));
+    for (int i = 0; i < length; i++) {
+        memory[i] = '.';
+    }
+    int time = 0, n_freeMemory = length;
+    printf("time %dms: Simulator started (Non-Contiguous)\n", time);
+    
+    int i, i_pArrival, added;
+    while ( isAllComplete(ps) == 0 ) {
+        // check for finished processes (remove from memory)
+        for (i = 0; i < n_processes; i++) {
+            i_pArrival = ps[i].i_arrival;
+            if (i_pArrival == ps[i].n_arrival) continue; // process is complete
+            if (ps[i].time_complete == time) {
+                // ps[i] process finished
+                ps[i].i_arrival += 1;
+                nonC_removePartition(memory, &ps[i], time);
+                n_freeMemory += ps[i].mem_frames;
+            }
+        }
+        
+        // check for arriving processes
+        for (i = 0; i < n_processes; i++) {
+            i_pArrival = ps[i].i_arrival;
+            if (i_pArrival == ps[i].n_arrival) continue; // process is completed
+            if (ps[i].arrival[i_pArrival] == time) {
+                // ps[i] process arrives
+                printf("time %dms: Process %c arrived (requires %d frames)\n", time, ps[i].id, ps[i].mem_frames);
+                if (n_freeMemory >= ps[i].mem_frames) {
+                    nonC_addFirstPartition(memory, &ps[i], time);
+                    n_freeMemory -= ps[i].mem_frames;
+                    ps[i].time_complete = time + ps[i].length[i_pArrival];
+                } else {
+                    // process could not be added because not enough free memory
+                    printf("time %dms: Cannot place process %c -- skipped!\n", time, ps[i].id);
+                    ps[i].i_arrival += 1;
+                }
+            }
+        }
+        time++;
+    }
+    time--;
+    printf("time %dms: Simulator ended (Non-Contiguous)\n", time);
+    free(memory);
+}
+
 void parse(char * line, struct Process* p) {
     int i;
     // get processID
@@ -402,6 +524,7 @@ void resetProcessesStats(struct Process* ps) {
         ps[i].arrival = memcpy( ps[i].arrival, ps[i].ogArrival, ps[i].n_arrival * sizeof(int) );
         ps[i].i_arrival = 0;
         ps[i].time_complete = -1;
+        ps[i].pages = NULL;
     }
 }
 
@@ -424,6 +547,8 @@ int main(int argc, char ** argv) {
         proc[i].i_arrival = 0;
         proc[i].n_arrival = 0;
         proc[i].time_complete = -1;
+        proc[i].pages = NULL;
+        proc[i].n_pages = 0;
     }
     
     char line[100];
@@ -459,6 +584,7 @@ int main(int argc, char ** argv) {
     Next_Fit(proc);
     resetProcessesStats(proc);
     
+    nonContiguous(proc);
     
 }
 
