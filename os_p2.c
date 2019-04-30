@@ -171,7 +171,7 @@ int findNextFitPartition(char* memory, struct Process* p, char* lastProc, int ti
         } else {
             // this frame is allocated for another process
             currPartitionSize = 0;
-            i_currPartition = i_lastProc+i+1;
+            i_currPartition = (i_lastProc+i+1)%length;
         }
         
         i++;
