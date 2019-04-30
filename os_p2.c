@@ -28,11 +28,12 @@ struct pageTable {
     int length;
 };
 
-// return 1 if all processes are complete (all processes' i_arrival == n_arrival)
-int isAllComplete(struct Process* p) {
+// return 1 if all processes are complete (i_arrival == n_arrival means complete)
+int isAllComplete(struct Process* p, int time) {
     int i;
     for (i = 0; i < n_processes; i++) {
         if (p[i].i_arrival != p[i].n_arrival) {
+            if (time == 3209) printf("%c\t%d\t%d\n", p[i].id, p[i].i_arrival, p[i].n_arrival);
             return 0;
         }
     }
@@ -77,44 +78,61 @@ void remove_partition(char * memory, struct Process* p, int counter) {
 }
 
 
-int defragmentation (char* memory, int counter, struct Process* processes) {
-    int p_start = 0, n_framesMoved = 0;
+int defragmentation (char* memory, struct Process* ps, int time) {
+    int p_start = -1, n_framesMoved = 0; // p_start is where the free memory partition starts
+    char psMoved[n_processes*3];
+    memset(psMoved, '\0', sizeof(psMoved));
+    int i_psMoved = 0;
     int i, j;
     char currID;
     int n_pFrames;
     for (i = 0; i < length; i++) {
-        if (memory[i] != '.' && p_start != i) {
+        // find start of free partition
+        if (memory[i] == '.' && p_start == -1) {
+            p_start = i;
+        } else if (memory[i] != '.' && p_start != -1) {
             currID = memory[i];
-            // get mem_frames for process with currID; also set process' mem_loc to start ot new partition
+            // get mem_frames for process with currID; also set process' mem_loc to start of new partition
             for (j = 0; j < n_processes; j++) {
-                if (processes[j].id == currID) {
-                    n_pFrames = processes[j].mem_frames;
-                    processes[j].mem_loc = memory + p_start;
+                if (ps[j].id == currID) {
+                    n_pFrames = ps[j].mem_frames;
+                    ps[j].mem_loc = memory + p_start;
                     break;
                 }
             }
             // shift memory down closer to the top of memory
-            for(j = 0; j < n_pFrames; j++) {
+            for (j = 0; j < n_pFrames; j++) {
                 memory[p_start + j] = currID;
                 memory[i + j] = '.';
             }
             n_framesMoved += n_pFrames;
-            p_start += n_pFrames;
+            i = p_start + n_pFrames - 1;
+            p_start = -1;
+            if (psMoved[0] != '\0' && i_psMoved) {
+                psMoved[i_psMoved] = ',';
+                psMoved[i_psMoved+1] = ' ';
+                i_psMoved += 2;
+            }
+            psMoved[i_psMoved] = currID;
+            i_psMoved += 1;
         }
     }
     int defragTime = n_framesMoved * t_mem_move;
     // modify arrival and length of all processes
     for (i = 0; i < n_processes; i++) {
-        if (processes[i].mem_loc != NULL) {
+        if (ps[i].mem_loc != NULL) {
             // process is in memory, so increase the time that the process will complete
-            processes[i].time_complete += defragTime;
+            ps[i].time_complete += defragTime;
         } else {
-            processes[i].arrival[processes[i].i_arrival] += defragTime;
+            ps[i].arrival[ps[i].i_arrival] += defragTime;
+        }
+        // increase future arrival times for all processes
+        for (j = ps[i].i_arrival+1; j < ps[i].n_arrival; j++) {
+            ps[i].arrival[j] += defragTime;
         }
     }
     
-    printf("time %dms: Defragmentation complete (moved %d frames: ", counter + defragTime, n_framesMoved);
-    
+    printf("time %dms: Defragmentation complete (moved %d frames: %s)\n", time + defragTime, n_framesMoved, psMoved);
     return defragTime;
 }
 
@@ -184,7 +202,7 @@ void Next_Fit(struct Process* ps) {
     // points to the memory location right after the last added process's frames
     char* lastProc = memory;
     int i, i_pArrival, added, defragTime;
-    while ( isAllComplete(ps) == 0 ) {
+    while ( isAllComplete(ps, time) == 0 ) {
         // check for finished processes (remove from memory)
         for (i = 0; i < n_processes; i++) {
             i_pArrival = ps[i].i_arrival;
@@ -220,7 +238,7 @@ void Next_Fit(struct Process* ps) {
                     if (ps[i].mem_frames <= n_freeMemory) {
                         // process can be added once memory is defragmented
                         printf("time %dms: Cannot place process %c -- starting defragmentation\n", time, ps[i].id);
-                        defragTime = defragmentation(memory, time, ps);
+                        defragTime = defragmentation(memory, ps, time);
                         time += defragTime;
                         // memory+(length-n_freeMemory) should point to address in memory where
                         //  the first free memory is
@@ -275,14 +293,13 @@ int ff_find_partition(char * memory, struct Process* p, int * counter, struct Pr
     //if the total amount of space is large enough for the process, defragment memory
     } else if (total_space >= p_space) {
         printf("time %dms: Cannot place process %c -- starting defragmentation\n", *counter, p->id);
-        int defragTime = defragmentation(memory, *counter, processes);
+        int defragTime = defragmentation(memory, processes, *counter);
         *counter += defragTime;
         ff_find_partition(memory, p, counter, processes);
         return 0;
     } else {
         //
         printf("time %dms: Cannot place process %c -- skipped!\n", *counter, p->id);
-        p->i_arrival += 1;
         return -1;
     }
     
@@ -299,7 +316,7 @@ void First_Fit(struct Process * p) {
     int counter = 0;
     printf("time %dms: Simulator started (Contiguous -- First-Fit)\n", counter);
     int i;
-    while( isAllComplete(p) == 0 ) {
+    while( isAllComplete(p, counter) == 0 ) {
         // remove completed processes from memory
         for (i = 0; i < n_processes; i++) {
             if (p[i].time_complete == counter) {
@@ -315,6 +332,7 @@ void First_Fit(struct Process * p) {
                 printf("time %dms: Process %c arrived (requires %d frames)\n", counter, p[i].id, p[i].mem_frames);
                 int found = ff_find_partition(memory, &p[i], &counter, p);
                 if (found == -1) {
+                    p[i].i_arrival += 1;
                     p[i].time_complete = -1;
                     // printf("time %dms: could not fit process %c\n", counter, p[i].id);
                 } else {
@@ -407,7 +425,7 @@ void nonContiguous(struct Process* ps) {
     printf("time %dms: Simulator started (Non-Contiguous)\n", time);
     
     int i, i_pArrival, added;
-    while ( isAllComplete(ps) == 0 ) {
+    while ( isAllComplete(ps, time) == 0 ) {
         // check for finished processes (remove from memory)
         for (i = 0; i < n_processes; i++) {
             i_pArrival = ps[i].i_arrival;
