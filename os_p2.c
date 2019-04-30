@@ -152,9 +152,10 @@ int findNextFitPartition(char* memory, struct Process* p, char* lastProc, int ti
     int i_lastProc = lastProc - memory;
     int i = 0, i_currPartition = i_lastProc, currPartitionSize = 0;
     int found = 0;
-    // try i < length + lastProcesses's frame cause last process could have left before next
-    // process arrived.. so memory is free before and after where lastProc is pointed to
-    while (i < length) {
+    // while loop will go from lastProc to the end of memory, then start from beginning, and then end at end of memory
+    //  this is because last process could have left before next process arrived.. so memory is free before and after
+    //   where lastProc points to
+    while (i < length + (length - (lastProc - memory))) {
         if (i_lastProc+i == length) {
             // reached end of memory, have to loop back to start with a new partition
             currPartitionSize = 0;
