@@ -39,7 +39,7 @@ int isAllComplete(struct Process* p) {
     return 1;
 }
 
-void print_mem(char * memory) {
+void printMem(char * memory) {
     int j = 0;
     for(int i = 0; i < column; i++) {
         printf("=");
@@ -60,7 +60,7 @@ void print_mem(char * memory) {
     printf("\n");
 }
 
-void remove_partition(char * memory, struct Process* p, int counter) {
+void removeContiguousPartition(char * memory, struct Process* p, int counter) {
     // checks if p is in memory
     if (p->mem_loc == NULL) {
         return;
@@ -73,7 +73,7 @@ void remove_partition(char * memory, struct Process* p, int counter) {
     p->mem_loc = NULL;
     
     printf("time %dms: Process %c removed:\n", counter, p->id);
-    print_mem(memory);
+    printMem(memory);
 }
 
 
@@ -135,73 +135,83 @@ int defragmentation (char* memory, struct Process* ps, int time) {
     return defragTime;
 }
 
-
-void Best_Fit() {
-    char * memory = calloc(length, sizeof(char));
-    for (int i = 0; i < length; i++) {
-        memory[i] = '.';
+// implemented modulus function because % sometimes returned a negative #
+int modulus(int x, int y) {
+    while (x >= y) {
+        x -= y;
     }
-    int counter = 0;
-    printf("time %dms: Simulator started (Contiguous -- Best-Fit)", counter);
-
-    free(memory);
+    return x;
 }
 
-int findNextFitPartition(char* memory, struct Process* p, char* lastProc, int time) {
+int findContiguousPartition(char* memory, struct Process* p, char* lastProc, int time, int best) {
     int n_frames = p->mem_frames;
-    int i_lastProc = lastProc - memory;
-    int i = 0, i_currPartition = i_lastProc, currPartitionSize = 0;
-    int found = 0;
-    // while loop will go from lastProc to the end of memory, then start from beginning, and then end at end of memory
-    //  this is because last process could have left before next process arrived.. so memory is free before and after
-    //   where lastProc points to
-    while (i < length + (length - (lastProc - memory))) {
-        if (i_lastProc+i == length) {
-            // reached end of memory, have to loop back to start with a new partition
-            currPartitionSize = 0;
-            i_currPartition = 0;
-        }
-        
-        if (memory[(i_lastProc+i)%length] == '.') {
+    int i, index;
+    int i_start = (int)(lastProc - memory);
+    int n_iterations = length + modulus( length - i_start, length );
+    int i_currPartition = -1, currPartitionSize = 0;
+    int i_bestPartition = -1, bestPartitionSize = length+1;
+    // for loop will go from lastProc to the end of memory, then start from beginning, and then up to the end of memory
+    //  this is because for Next-Fit algorithm, last process could have left before the next process arrived.. so
+    //   memory is free before and after where lastProc points to (for First-Fit and Best-Fit, for loop will simply
+    //    iterate from the beginning to the end of memory once because lastProc == memory)
+    for (i = i_start; i < i_start + n_iterations; i++) {
+        index = modulus(i, length);
+        if (memory[index] == '.') {
+            if (currPartitionSize == 0) {
+                i_currPartition = index;
+            }
             currPartitionSize++;
-            if (currPartitionSize == n_frames) {
-                found = 1;
-                break;
+            
+            // before the loop iterates from the end of memory to the beginning of memory, partition must reset
+            //  so check if the last partition is valid (only for Next-Fit)
+            if (index == length-1) {
+                if (currPartitionSize >= n_frames && currPartitionSize < bestPartitionSize) {
+                    i_bestPartition = i_currPartition;
+                    bestPartitionSize = currPartitionSize;
+                    if (best == 0) break;
+                }
+                currPartitionSize = 0;
             }
         } else {
             // this frame is allocated for another process
+            if (currPartitionSize >= n_frames && currPartitionSize < bestPartitionSize) {
+                i_bestPartition = i_currPartition;
+                bestPartitionSize = currPartitionSize;
+                if (best == 0) break;
+            }
             currPartitionSize = 0;
-            i_currPartition = (i_lastProc+i+1)%length;
         }
-        
-        i++;
     }
     
-    if (found == 1) {
+    if (i_bestPartition != -1) {
         // update process' mem_loc
-        p->mem_loc = memory + i_currPartition;
+        p->mem_loc = memory + i_bestPartition;
         char pid = p->id;
         for (i = 0; i < n_frames; i++) {
-            memory[i_currPartition+i] = pid;
+            memory[i_bestPartition+i] = pid;
         }
         // placed the process in memory
         printf("time %dms: Placed process %c:\n", time, p->id);
-        print_mem(memory);
+        printMem(memory);
+        return 1;
     }
     
-    return found;
+    return 0;
 }
 
-void Next_Fit(struct Process* ps) {
+
+void contiguousMemoryAllocation(struct Process* ps, char* algorithm) {
     char * memory = calloc(length, sizeof(char));
     for (int i = 0; i < length; i++) {
         memory[i] = '.';
     }
+    
     int time = 0, n_freeMemory = length;
-    printf("time %dms: Simulator started (Contiguous -- Next-Fit)\n", time);
-    // points to the memory location right after the last added process's frames
-    char* lastProc = memory;
+    printf("time %dms: Simulator started (Contiguous -- %s)\n", time, algorithm);
     int i, i_pArrival, added, defragTime;
+    // in First-Fit and Best-Fit algorithm, lastProc will never be updated in the
+    //  loop, so beginning of memory is always passed in as argument to func findContiguousPartition
+    char* lastProc = memory;
     while ( isAllComplete(ps) == 0 ) {
         // check for finished processes (remove from memory)
         for (i = 0; i < n_processes; i++) {
@@ -210,7 +220,7 @@ void Next_Fit(struct Process* ps) {
             if (ps[i].time_complete == time) {
                 // ps[i] process finished
                 ps[i].i_arrival += 1;
-                remove_partition(memory, &ps[i], time);
+                removeContiguousPartition(memory, &ps[i], time);
                 n_freeMemory += ps[i].mem_frames;
             }
         }
@@ -222,17 +232,26 @@ void Next_Fit(struct Process* ps) {
             if (ps[i].arrival[i_pArrival] == time) {
                 // ps[i] process arrives
                 printf("time %dms: Process %c arrived (requires %d frames)\n", time, ps[i].id, ps[i].mem_frames);
-                added = findNextFitPartition(memory, &ps[i], lastProc, time);
+                if ( strcmp(algorithm, "First-Fit") == 0 ) {
+                    added = findContiguousPartition(memory, &ps[i], lastProc, time, 0);
+                } else if ( strcmp(algorithm, "Next-Fit") == 0 ) {
+                    added = findContiguousPartition(memory, &ps[i], lastProc, time, 0);
+                } else if ( strcmp(algorithm, "Best-Fit") == 0 ) {
+                    added = findContiguousPartition(memory, &ps[i], lastProc, time, 1);
+                }
+                
                 if (added == 1) {
                     n_freeMemory -= ps[i].mem_frames;
-                    // update lastProc
-                    lastProc = ps[i].mem_loc + ps[i].mem_frames;
-                    if (lastProc == memory + length) {
-                        // if last process added was added at the end of memory and filled up to the end
-                        //  so set next free space after last process as the beginnning of memory
-                        lastProc = memory;
-                    }
                     ps[i].time_complete = time + ps[i].length[i_pArrival];
+                    // update lastProc if algorithm is Next-Fit
+                    if ( strcmp(algorithm, "Next-Fit") == 0 ) {
+                        lastProc = ps[i].mem_loc + ps[i].mem_frames;
+                        if (lastProc == memory + length) {
+                            // if last process added was added at the end of memory and filled up to the end
+                            //  so set next free space after last process as the beginnning of memory
+                            lastProc = memory;
+                        }
+                    }
                 } else {
                     // process could not be added because no available contiguous partition
                     if (ps[i].mem_frames <= n_freeMemory) {
@@ -240,18 +259,24 @@ void Next_Fit(struct Process* ps) {
                         printf("time %dms: Cannot place process %c -- starting defragmentation\n", time, ps[i].id);
                         defragTime = defragmentation(memory, ps, time);
                         time += defragTime;
-                        // memory+(length-n_freeMemory) should point to address in memory where
-                        //  the first free memory is
-                        findNextFitPartition( memory, &ps[i], memory+(length-n_freeMemory), time );
-                        n_freeMemory -= ps[i].mem_frames;
-                        // update lastProc
-                        lastProc = ps[i].mem_loc + ps[i].mem_frames;
-                        if (lastProc == memory + length) {
-                            // if last process added was added at the end of memory and filled up to the end
-                            //  so set next free space after last process as the beginnning of memory
-                            lastProc = memory;
+                        if ( strcmp(algorithm, "First-Fit") == 0 ) {
+                            findContiguousPartition(memory, &ps[i], lastProc, time, 0);
+                        } else if ( strcmp(algorithm, "Next-Fit") == 0 ) {
+                            findContiguousPartition(memory, &ps[i], lastProc, time, 0);
+                        } else if ( strcmp(algorithm, "Best-Fit") == 0 ) {
+                            findContiguousPartition(memory, &ps[i], lastProc, time, 1);
                         }
+                        n_freeMemory -= ps[i].mem_frames;
                         ps[i].time_complete = time + ps[i].length[i_pArrival];
+                        // update lastProc if algorithm is Next-Fit
+                        if ( strcmp(algorithm, "Next-Fit") == 0 ) {
+                            lastProc = ps[i].mem_loc + ps[i].mem_frames;
+                            if (lastProc == memory + length) {
+                                // if last process added was added at the end of memory and filled up to the end
+                                //  so set next free space after last process as the beginnning of memory
+                                lastProc = memory;
+                            }
+                        }
                     } else {
                         // process can not be added even if memory were to be defragmented so skip it
                         printf("time %dms: Cannot place process %c -- skipped!\n", time, ps[i].id);
@@ -264,98 +289,14 @@ void Next_Fit(struct Process* ps) {
         time++;
     }
     time--;
-    printf("time %dms: Simulator ended (Contiguous -- Next-Fit)\n\n", time);
+    printf("time %dms: Simulator ended (Contiguous -- %s)\n\n", time, algorithm);
     free(memory);
 }
 
 
-int ff_find_partition(char * memory, struct Process* p, int * counter, struct Process * processes) {
-    int partition_space = 0;
-    int total_space = 0;
-    
-    int p_space = p->mem_frames;
-    int p_start = 0;
-    int found = 0;
-    for (int i = 0; i < length; i++) {
-        if (partition_space == p_space) {
-            found = 1;
-            break;
-        } else if (memory[i] != '.') {
-            partition_space = 0;
-            p_start = i + 1;
-            continue;
-        }
-        partition_space++;
-        total_space++;
-    }
-    
-    // if a partition large enough for the process is found
-    if (found == 1 || partition_space == p_space) {
-        for (int i = p_start; i < p_start + p_space; i++){
-            memory[i] = p->id;
-        }
-        p->mem_loc = memory + p_start;
-        printf("time %dms: Placed process %c:\n", *counter, p->id);
-        
-    //if the total amount of space is large enough for the process, defragment memory
-    } else if (total_space >= p_space) {
-        printf("time %dms: Cannot place process %c -- starting defragmentation\n", *counter, p->id);
-        int defragTime = defragmentation(memory, processes, *counter);
-        *counter += defragTime;
-        ff_find_partition(memory, p, counter, processes);
-        return 0;
-    } else {
-        //
-        printf("time %dms: Cannot place process %c -- skipped!\n", *counter, p->id);
-        return -1;
-    }
-    
-    print_mem(memory);
-    return 0;
-}
-
-void First_Fit(struct Process * p) {
-    char * memory = calloc(length, sizeof(char));
-    for (int i = 0; i < length; i++) {
-        memory[i] = '.';
-    }
-    
-    int counter = 0;
-    printf("time %dms: Simulator started (Contiguous -- First-Fit)\n", counter);
-    int i;
-    while( isAllComplete(p) == 0 ) {
-        // remove completed processes from memory
-        for (i = 0; i < n_processes; i++) {
-            if (p[i].time_complete == counter) {
-                remove_partition(memory, &p[i], counter);
-                p[i].i_arrival += 1;
-                p[i].time_complete = -1;
-            }
-        }
-        
-        for (i = 0; i < n_processes; i++) {
-            if (p[i].i_arrival == p[i].n_arrival) continue; // process is already finished
-            if(p[i].arrival[p[i].i_arrival] == counter){
-                printf("time %dms: Process %c arrived (requires %d frames)\n", counter, p[i].id, p[i].mem_frames);
-                int found = ff_find_partition(memory, &p[i], &counter, p);
-                if (found == -1) {
-                    p[i].i_arrival += 1;
-                    p[i].time_complete = -1;
-                    // printf("time %dms: could not fit process %c\n", counter, p[i].id);
-                } else {
-                    p[i].time_complete = counter + p[i].length[p[i].i_arrival];
-                }
-            }
-        }
-        counter++;
-    }
-    counter--;
-    printf("time %dms: Simulator ended (Contiguous -- First-Fit)\n\n", counter);
-    free(memory);
-}
-
-
-void nonC_addFirstPartition(char* memory, struct Process* p, int time) {
+// non-Contiguous Memory Allocation Scheme
+// nonC_findPartition searches for a First-Fit memory partition that can fit process p
+void nonC_findPartition(char* memory, struct Process* p, int time) {
     int n_frames = p->mem_frames;
     char* partitionStart = NULL;
     int i = 0, partitionSize;
@@ -395,7 +336,7 @@ void nonC_addFirstPartition(char* memory, struct Process* p, int time) {
         }
     }
     printf("time %dms: Placed process %c:\n", time, p->id);
-    print_mem(memory);
+    printMem(memory);
 }
 
 void nonC_removePartition(char* memory, struct Process* p, int time) {
@@ -420,10 +361,10 @@ void nonC_removePartition(char* memory, struct Process* p, int time) {
     p->n_pages = 0;
     
     printf("time %dms: Process %c removed:\n", time, p->id);
-    print_mem(memory);
+    printMem(memory);
 }
 
-void nonContiguous(struct Process* ps) {
+void nonContiguousMemoryAllocation(struct Process* ps) {
     char * memory = calloc(length, sizeof(char));
     for (int i = 0; i < length; i++) {
         memory[i] = '.';
@@ -453,7 +394,7 @@ void nonContiguous(struct Process* ps) {
                 // ps[i] process arrives
                 printf("time %dms: Process %c arrived (requires %d frames)\n", time, ps[i].id, ps[i].mem_frames);
                 if (n_freeMemory >= ps[i].mem_frames) {
-                    nonC_addFirstPartition(memory, &ps[i], time);
+                    nonC_findPartition(memory, &ps[i], time);
                     n_freeMemory -= ps[i].mem_frames;
                     ps[i].time_complete = time + ps[i].length[i_pArrival];
                 } else {
@@ -604,12 +545,16 @@ int main(int argc, char ** argv) {
     proc = procTemp;
     procTemp = NULL;
     
-    First_Fit(proc);
-    resetProcessesStats(proc);
-    Next_Fit(proc);
+    contiguousMemoryAllocation(proc, "First-Fit");
     resetProcessesStats(proc);
     
-    nonContiguous(proc);
+    contiguousMemoryAllocation(proc, "Next-Fit");
+    resetProcessesStats(proc);
+    
+    contiguousMemoryAllocation(proc, "Best-Fit");
+    resetProcessesStats(proc);
+    
+    nonContiguousMemoryAllocation(proc);
     
 }
 
